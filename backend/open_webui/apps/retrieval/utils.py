@@ -66,6 +66,15 @@ def query_doc(
     k: int,
 ):
     try:
+        log.info(f"Attempting search with parameters:")
+        log.info(f"Collection name: {collection_name}")
+        log.info(f"Query embedding length: {len(query_embedding)}")
+        log.info(f"k value: {k}")
+        
+        # Check if collection exists
+        collections = VECTOR_DB_CLIENT.list_collections()
+        log.info(f"Available collections: {collections}")
+        
         result = VECTOR_DB_CLIENT.search(
             collection_name=collection_name,
             vectors=[query_embedding],
@@ -73,9 +82,13 @@ def query_doc(
         )
 
         log.info(f"query_doc:result {result.ids} {result.metadatas}")
+        log.info(f"Full result object: {result}")
         return result
     except Exception as e:
-        print(e)
+        log.error(f"Error in query_doc: {str(e)}")
+        log.error(f"Error type: {type(e)}")
+        import traceback
+        log.error(f"Traceback: {traceback.format_exc()}")
         raise e
 
 
