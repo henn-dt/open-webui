@@ -40,56 +40,134 @@ router = APIRouter()
 
 @router.post("/", response_model=FileModelResponse)
 def upload_file(file: UploadFile = File(...), user=Depends(get_verified_user)):
+    """
+    Handle file upload with detailed logging of the process.
+    """
+    # Log initial request details
+    log.info(
+        f"Starting file upload process:\n"
+        f"Original filename: {file.filename}\n"
+        f"Content type: {file.content_type}\n"
+        f"User ID: {user.id}"
+    )
+
     log.info(f"file.content_type: {file.content_type}")
     try:
         unsanitized_filename = file.filename
         filename = os.path.basename(unsanitized_filename)
+        log.debug(
+            f"Filename sanitization:\n"
+            f"Original: {unsanitized_filename}\n"
+            f"Sanitized: {filename}"
+        )
 
         # replace filename with uuid
         id = str(uuid.uuid4())
         name = filename
         filename = f"{id}_{filename}"
-        contents, file_path = Storage.upload_file(file.file, filename)
-
-        file_item = Files.insert_new_file(
-            user.id,
-            FileForm(
-                **{
-                    "id": id,
-                    "filename": name,
-                    "path": file_path,
-                    "meta": {
-                        "name": name,
-                        "content_type": file.content_type,
-                        "size": len(contents),
-                    },
-                }
-            ),
+        log.info(
+            f"Generated file identifiers:\n"
+            f"UUID: {id}\n"
+            f"Final filename: {filename}"
         )
 
+        # Upload file to storage
+        log.info("Attempting to upload file to storage")
+        try:
+            contents, file_path = Storage.upload_file(file.file, filename)
+            log.info(
+                f"File successfully uploaded to storage:\n"
+                f"Path: {file_path}\n"
+                f"Size: {len(contents)} bytes"
+            )
+        except Exception as storage_error:
+            log.error(f"Storage upload failed: {str(storage_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=ERROR_MESSAGES.DEFAULT("Storage upload failed")
+            )
+
+        # Create file record
+        log.info("Creating file record in database")
+        file_form_data = {
+            "id": id,
+            "filename": name,
+            "path": file_path,
+            "meta": {
+                "name": name,
+                "content_type": file.content_type,
+                "size": len(contents),
+            },
+        }
+        log.debug(f"File form data: {file_form_data}")
+
+        try:
+            file_item = Files.insert_new_file(
+                user.id,
+                FileForm(**file_form_data)
+            )
+            log.info(f"File record created successfully with ID: {file_item.id}")
+        except Exception as db_error:
+            log.error(f"Database insertion failed: {str(db_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=ERROR_MESSAGES.DEFAULT("Database record creation failed")
+            )
+
+        # Process file
+        log.info(f"Starting file processing for file ID: {id}")
         try:
             process_file(ProcessFileForm(file_id=id))
+            log.info(f"File processing completed successfully for ID: {id}")
+            
             file_item = Files.get_file_by_id(id=id)
-        except Exception as e:
-            log.exception(e)
-            log.error(f"Error processing file: {file_item.id}")
+            log.debug(f"Retrieved processed file item: {file_item.model_dump()}")
+            
+        except Exception as process_error:
+            log.error(
+                f"File processing error:\n"
+                f"File ID: {file_item.id}\n"
+                f"Error: {str(process_error)}\n"
+                f"Stack trace:"
+            )
+            log.exception(process_error)
+            
+            error_message = str(process_error.detail) if hasattr(process_error, "detail") else str(process_error)
+            log.debug(f"Constructing error response with message: {error_message}")
+            
             file_item = FileModelResponse(
                 **{
                     **file_item.model_dump(),
-                    "error": str(e.detail) if hasattr(e, "detail") else str(e),
+                    "error": error_message,
                 }
             )
 
         if file_item:
+            log.info(f"Successfully completed file upload process for ID: {id}")
             return file_item
         else:
+            log.error("File item not found after processing")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=ERROR_MESSAGES.DEFAULT("Error uploading file"),
             )
 
     except Exception as e:
+        log.error("Unexpected error in upload_file endpoint")
         log.exception(e)
+
+        # Log detailed error information
+        error_details = {
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "file_info": {
+                "filename": getattr(file, "filename", None),
+                "content_type": getattr(file, "content_type", None),
+                "user_id": getattr(user, "id", None)
+            }
+        }
+        log.error(f"Error details: {error_details}")
+        
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.DEFAULT(e),

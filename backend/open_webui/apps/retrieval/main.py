@@ -748,16 +748,33 @@ def save_docs_to_vector_db(
     split: bool = True,
     add: bool = False,
 ) -> bool:
+    
+    # Log initial function call with all parameters
+    log.info(
+        f"Starting save_docs_to_vector_db with parameters: \n"
+        f"collection_name: {collection_name}\n"
+        f"metadata: {metadata}\n"
+        f"overwrite: {overwrite}\n"
+        f"split: {split}\n"
+        f"add: {add}\n"
+        f"docs info: {_get_docs_info(docs)}"
+    )
+
+    # Log VECTOR_DB_CLIENT properties
+    log.debug(f"VECTOR_DB_CLIENT properties: {vars(VECTOR_DB_CLIENT)}")
+
     log.info(
         f"save_docs_to_vector_db: document {_get_docs_info(docs)} {collection_name}"
     )
 
     # Check if entries with the same hash (metadata.hash) already exist
     if metadata and "hash" in metadata:
+        log.info(f"Checking for existing document with hash: {metadata['hash']}")
         result = VECTOR_DB_CLIENT.query(
             collection_name=collection_name,
             filter={"hash": metadata["hash"]},
         )
+        log.debug(f"Query result for duplicate check: {result}")
 
         if result is not None:
             existing_doc_ids = result.ids[0]
@@ -766,6 +783,8 @@ def save_docs_to_vector_db(
                 raise ValueError(ERROR_MESSAGES.DUPLICATE_CONTENT)
 
     if split:
+        log.info(f"Splitting documents using splitter type: {app.state.config.TEXT_SPLITTER}")
+        log.debug(f"Chunk size: {app.state.config.CHUNK_SIZE}, Overlap: {app.state.config.CHUNK_OVERLAP}")
         if app.state.config.TEXT_SPLITTER in ["", "character"]:
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=app.state.config.CHUNK_SIZE,
@@ -785,14 +804,19 @@ def save_docs_to_vector_db(
                 add_start_index=True,
             )
         else:
+            log.error(f"Invalid text splitter type: {app.state.config.TEXT_SPLITTER}")
             raise ValueError(ERROR_MESSAGES.DEFAULT("Invalid text splitter"))
 
         docs = text_splitter.split_documents(docs)
+        log.info(f"Documents split into {len(docs)} chunks")
 
     if len(docs) == 0:
+        log.error("No documents to process after splitting")
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
-
+    
+    # Prepare texts and metadata
     texts = [doc.page_content for doc in docs]
+    log.debug(f"Number of texts to process: {len(texts)}")
     metadatas = [
         {
             **doc.metadata,
@@ -806,6 +830,7 @@ def save_docs_to_vector_db(
         }
         for doc in docs
     ]
+    log.debug(f"Metadata sample: {metadatas[0] if metadatas else 'No metadata'}")
 
     # ChromaDB does not like datetime formats
     # for meta-data so convert them to string.
@@ -813,6 +838,7 @@ def save_docs_to_vector_db(
         for key, value in metadata.items():
             if isinstance(value, datetime):
                 metadata[key] = str(value)
+                log.debug(f"Converted datetime in metadata: {key}={value}")
 
     try:
         if VECTOR_DB_CLIENT.has_collection(collection_name=collection_name):
@@ -826,6 +852,15 @@ def save_docs_to_vector_db(
                     f"collection {collection_name} already exists, overwrite is False and add is False"
                 )
                 return True
+            
+        log.info(f"Preparing to add documents to collection: {collection_name}")
+        # Log embedding configuration
+        log.info(
+            f"Embedding configuration:\n"
+            f"Engine: {app.state.config.RAG_EMBEDDING_ENGINE}\n"
+            f"Model: {app.state.config.RAG_EMBEDDING_MODEL}\n"
+            f"Batch size: {app.state.config.RAG_EMBEDDING_BATCH_SIZE}"
+        )
 
         log.info(f"adding to collection {collection_name}")
         embedding_function = get_embedding_function(
@@ -844,10 +879,11 @@ def save_docs_to_vector_db(
             ),
             app.state.config.RAG_EMBEDDING_BATCH_SIZE,
         )
-
+        log.info("Generating embeddings...")
         embeddings = embedding_function(
             list(map(lambda x: x.replace("\n", " "), texts))
         )
+        log.info(f"Generated {len(embeddings)} embeddings")
 
         items = [
             {
@@ -858,11 +894,13 @@ def save_docs_to_vector_db(
             }
             for idx, text in enumerate(texts)
         ]
+        log.debug(f"Created {len(items)} items for insertion")
 
         VECTOR_DB_CLIENT.insert(
             collection_name=collection_name,
             items=items,
         )
+        log.info(f"Successfully inserted {len(items)} items into collection {collection_name}")
 
         return True
     except Exception as e:
