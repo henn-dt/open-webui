@@ -24,6 +24,11 @@ ARG GID=0
 FROM --platform=$BUILDPLATFORM node:22-alpine3.20 AS build
 ARG BUILD_HASH
 
+# Add a build argument for cache-busting
+ARG CACHEBUST=1
+
+RUN echo "Cache busting at: $CACHEBUST"
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./

@@ -27,18 +27,28 @@ log.setLevel(SRC_LOG_LEVELS["SOCKET"])
 
 
 if WEBSOCKET_MANAGER == "redis":
-    mgr = socketio.AsyncRedisManager(WEBSOCKET_REDIS_URL)
-    sio = socketio.AsyncServer(
-        cors_allowed_origins=[],
-        async_mode="asgi",
-        transports=(
-            ["polling", "websocket"] if ENABLE_WEBSOCKET_SUPPORT else ["polling"]
-        ),
-        allow_upgrades=ENABLE_WEBSOCKET_SUPPORT,
-        always_connect=True,
-        client_manager=mgr,
-    )
+    try:
+        log.info(f"Initializing Redis WebSocket manager with URL: {WEBSOCKET_REDIS_URL}")
+        mgr = socketio.AsyncRedisManager(WEBSOCKET_REDIS_URL)
+        sio = socketio.AsyncServer(
+            cors_allowed_origins=[],
+            async_mode="asgi",
+            transports=(
+                ["polling", "websocket"] if ENABLE_WEBSOCKET_SUPPORT else ["polling"]
+            ),
+            allow_upgrades=ENABLE_WEBSOCKET_SUPPORT,
+            always_connect=True,
+            client_manager=mgr,
+        )
+        log.info("Successfully initialized Redis WebSocket manager")
+        log.info(f"WebSocket transports enabled: {['polling', 'websocket'] if ENABLE_WEBSOCKET_SUPPORT else ['polling']}")
+
+    except Exception as e:
+        log.error(f"Failed to initialize Redis WebSocket manager: {str(e)}")
+        raise  # Re-raise the exception after logging
+
 else:
+    log.info("Using default WebSocket manager (no Redis)")
     sio = socketio.AsyncServer(
         cors_allowed_origins=[],
         async_mode="asgi",
@@ -48,15 +58,27 @@ else:
         allow_upgrades=ENABLE_WEBSOCKET_SUPPORT,
         always_connect=True,
     )
+    log.info(f"WebSocket transports enabled: {['polling', 'websocket'] if ENABLE_WEBSOCKET_SUPPORT else ['polling']}")
 
 
 # Dictionary to maintain the user pool
 
 if WEBSOCKET_MANAGER == "redis":
-    SESSION_POOL = RedisDict("open-webui:session_pool", redis_url=WEBSOCKET_REDIS_URL)
-    USER_POOL = RedisDict("open-webui:user_pool", redis_url=WEBSOCKET_REDIS_URL)
-    USAGE_POOL = RedisDict("open-webui:usage_pool", redis_url=WEBSOCKET_REDIS_URL)
+    try:
+        SESSION_POOL = RedisDict("open-webui:session_pool", redis_url=WEBSOCKET_REDIS_URL)
+        USER_POOL = RedisDict("open-webui:user_pool", redis_url=WEBSOCKET_REDIS_URL)
+        USAGE_POOL = RedisDict("open-webui:usage_pool", redis_url=WEBSOCKET_REDIS_URL)
+        log.info("Successfully connected to Redis and initialized pools")
+    except Exception as e:
+        log.error(f"Failed to connect to Redis: {str(e)}")
+        # Fallback to in-memory
+        SESSION_POOL = {}
+        USER_POOL = {}
+        USAGE_POOL = {}
+        log.warning("Falling back to in-memory pools")
+
 else:
+    log.info("Using in-memory pools (Redis not configured)")
     SESSION_POOL = {}
     USER_POOL = {}
     USAGE_POOL = {}

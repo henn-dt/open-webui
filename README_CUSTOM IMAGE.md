@@ -1,14 +1,14 @@
 
-# Build version without Ollama for multi-platform 
-docker buildx build --build-arg USE_OLLAMA=false --platform linux/amd64,linux/arm64 -t ghcr.io/henn-dt/open-webui:rag-debug .
+# Build version without Ollama for henn aks
+docker build --build-arg USE_OLLAMA=false --platform linux/arm64 -t ghcr.io/henn-dt/open-webui:rag-debug .
 
 
 # Build version with Ollama
-docker build --build-arg USE_OLLAMA=true --platform linux/amd64,linux/arm64 -t henn-dt/open-webui:rag-debug-with-ollama .
+docker build --no-cache --build-arg USE_OLLAMA=true -t henn-dt/open-webui:rag-debug-with-ollama .
 
     First, log in to GitHub Container Registry. You'll need a Personal Access Token (PAT) from GitHub: 
         Go to GitHub.com -> Settings -> Developer Settings -> Personal Access Token
-        Create a new token with write:packages and read:packages permissions
+        Create a new token with write:packages delete:packages and read:packages permissions
         Save the token somewhere safe
          
 
@@ -19,7 +19,7 @@ docker build --build-arg USE_OLLAMA=true --platform linux/amd64,linux/arm64 -t h
 Tag your images following GHCR naming convention:
 
 # For the no-ollama version
-docker tag henn-dt/open-webui:rag-debug-no-ollama ghcr.io/henn-dt/open-webui:rag-debug
+docker tag henn-dt/open-webui:rag-debug ghcr.io/henn-dt/open-webui:rag-debug
 
 # For the with-ollama version
 docker tag henn-dt/open-webui:rag-debug-with-ollama ghcr.io/henn-dt/open-webui:rag-debug-with-ollama
@@ -28,6 +28,10 @@ Push the images:
 
 docker push ghcr.io/henn-dt/open-webui:rag-debug
 docker push ghcr.io/henn-dt/open-webui:rag-debug-with-ollama
+
+# build and push as a oneliner:
+docker buildx build --platform linux/arm64 --tag ghcr.io/henn-dt/open-webui:rag-debug --push .
+docker buildx build -build-arg USE_OLLAMA=true --tag ghcr.io/henn-dt/open-webui:rag-debug-ollama --push .
 
 on Kubernetes:
 # Check if you're logged into GHCR

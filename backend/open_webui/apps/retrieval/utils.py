@@ -2,6 +2,7 @@ import logging
 import os
 import uuid
 from typing import Optional, Union
+import json
 
 import asyncio
 import requests
@@ -70,19 +71,24 @@ def query_doc(
         log.info(f"Collection name: {collection_name}")
         log.info(f"Query embedding length: {len(query_embedding)}")
         log.info(f"k value: {k}")
-        
-        # Check if collection exists
-        collections = VECTOR_DB_CLIENT.list_collections()
-        log.info(f"Available collections: {collections}")
-        
+
+        request_payload = {
+            "collection_name": collection_name,
+            "vectors": [query_embedding],
+            "limit": k
+        }
+
+        log.info(f"Request payload: {json.dumps(request_payload, indent=2)}")
+                
         result = VECTOR_DB_CLIENT.search(
             collection_name=collection_name,
             vectors=[query_embedding],
             limit=k,
         )
 
-        log.info(f"query_doc:result {result.ids} {result.metadatas}")
         log.info(f"Full result object: {result}")
+        log.info(f"query_doc:result {result.ids} {result.metadatas}")
+
         return result
     except Exception as e:
         log.error(f"Error in query_doc: {str(e)}")
